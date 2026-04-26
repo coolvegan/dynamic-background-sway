@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"gittea.kittel.dev/marco/dynamic_background/internal/application"
 	"gittea.kittel.dev/marco/dynamic_background/internal/domain"
 
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 )
 
 // Server is the HTTP/WebSocket API server.
@@ -25,6 +27,9 @@ type Server struct {
 	scheduler     *application.Scheduler
 	orchestrator  *application.Orchestrator
 	router        *mux.Router
+	upgrader      websocket.Upgrader
+	clients       map[*websocket.Conn]bool
+	mu            sync.RWMutex
 }
 
 // NewServer creates a new API server instance.
@@ -39,6 +44,14 @@ func NewServer(cfg *domain.Config, wm *application.WidgetManager, sched *applica
 		scheduler:     sched,
 		orchestrator:  orch,
 		router:        mux.NewRouter(),
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				return true // Allow all origins for local use
+			},
+		},
+		clients: make(map[*websocket.Conn]bool),
 	}
 
 	s.registerRoutes()
@@ -180,8 +193,72 @@ func (s *Server) handleGetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 // handleWebSocket upgrades connection to WebSocket for real-time updates.
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement WebSocket handler
-	w.WriteHeader(http.StatusNotImplemented)
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	s.clients[conn] = true
+	s.mu.Unlock()
+
+	// Send initial state
+	s.sendToClient(conn, map[string]interface{}{
+		"type": "connected",
+		"data": map[string]interface{}{
+			"timestamp": time.Now().Format(time.RFC3339),
+		},
+	})
+
+	// Keep connection alive and handle messages
+	go s.handleClientMessages(conn)
+}
+
+// handleClientMessages reads messages from a client.
+func (s *Server) handleClientMessages(conn *websocket.Conn) {
+	defer func() {
+		s.mu.Lock()
+		delete(s.clients, conn)
+		s.mu.Unlock()
+		conn.Close()
+	}()
+
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+	}
+}
+
+// Broadcast sends a message to all connected WebSocket clients.
+//
+// WHY: Echtzeit-Updates an alle Clients wenn sich Widgets ändern.
+// WHAT: Iteriert über alle Connections, sendet JSON-Message.
+// IMPACT: Ohne Broadcast müssten Clients pollen; ineffizient und verzögert.
+func (s *Server) Broadcast(message map[string]interface{}) {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for conn := range s.clients {
+		s.sendToClient(conn, message)
+		_ = data // Use data variable
+	}
+}
+
+// sendToClient sends a JSON message to a single client.
+func (s *Server) sendToClient(conn *websocket.Conn, message interface{}) {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return
+	}
+
+	conn.WriteMessage(websocket.TextMessage, data)
 }
 
 var startTime = time.Now()
