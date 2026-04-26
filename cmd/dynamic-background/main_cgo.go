@@ -52,9 +52,18 @@ func run() error {
 		return fmt.Errorf("creating surface: %w", err)
 	}
 
-	r := renderer.NewEGLRenderer(s, cfg.Background)
-	if err := r.Init(); err != nil {
-		return fmt.Errorf("initializing EGL renderer: %w", err)
+	var r renderer.Renderer
+	switch cfg.Renderer.Type {
+	case domain.RendererTypeEGL:
+		egl := renderer.NewEGLRenderer(s, cfg.Background)
+		if err := egl.Init(); err != nil {
+			return fmt.Errorf("initializing EGL renderer: %w", err)
+		}
+		r = egl
+		fmt.Println("using EGL renderer (hardware-accelerated)")
+	default:
+		r = renderer.NewWaylandRenderer(s, cfg.Background)
+		fmt.Println("using Wayland SHM renderer (software)")
 	}
 	orch := application.NewOrchestrator(cfg, collectors, r, s)
 
@@ -82,7 +91,9 @@ func run() error {
 	<-sig
 
 	fmt.Println("\nshutting down...")
-	r.Cleanup()
+	if cr, ok := r.(interface{ Cleanup() }); ok {
+		cr.Cleanup()
+	}
 	orch.Stop()
 	return nil
 }
