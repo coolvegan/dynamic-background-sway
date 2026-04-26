@@ -32,7 +32,8 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"strconv"
 
@@ -106,7 +107,28 @@ func drawImageBackground(img *image.RGBA, path string) error {
 	if err != nil {
 		return fmt.Errorf("decoding background image: %w", err)
 	}
-	draw.Draw(img, img.Rect, bgImg, image.Point{}, draw.Src)
+
+	// Scale image to fill the entire canvas
+	bounds := bgImg.Bounds()
+	srcW := bounds.Dx()
+	srcH := bounds.Dy()
+	dstW := img.Rect.Dx()
+	dstH := img.Rect.Dy()
+
+	for dy := 0; dy < dstH; dy++ {
+		for dx := 0; dx < dstW; dx++ {
+			sx := (dx * srcW) / dstW
+			sy := (dy * srcH) / dstH
+			c := bgImg.At(bounds.Min.X+sx, bounds.Min.Y+sy)
+			r, g, b, _ := c.RGBA()
+			img.Set(img.Rect.Min.X+dx, img.Rect.Min.Y+dy, color.RGBA{
+				R: uint8(r >> 8),
+				G: uint8(g >> 8),
+				B: uint8(b >> 8),
+				A: 255,
+			})
+		}
+	}
 	return nil
 }
 

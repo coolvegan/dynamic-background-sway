@@ -1,6 +1,8 @@
 background:
-  type: gradient
-  colors: ["#000000", "#222222"]
+  # type: gradient
+  # colors: ["#000000", "#222222"]
+  type: image
+  image_path: "/usr/share/backgrounds/wallpaper1.jpg"
 
 widgets:
   - type: clock
@@ -22,7 +24,25 @@ widgets:
       background: "rgba(0,0,0,0.0)"
 
   - type: memory
-    position: { x: 240, y: 80 }
+    position: { x: 20, y: 140 }
+    size: { width: 200, height: 50 }
+    interval: 5s
+    style:
+      font: "DejaVu Sans 16"
+      color: "#ffffff"
+      background: "rgba(0,0,0,0.0)"
+
+  - type: disk
+    position: { x: 20, y: 200 }
+    size: { width: 200, height: 50 }
+    interval: 5s
+    style:
+      font: "DejaVu Sans 16"
+      color: "#ffffff"
+      background: "rgba(0,0,0,0.0)"
+
+  - type: network
+    position: { x: 20, y: 260 }
     size: { width: 200, height: 50 }
     interval: 5s
     style:
