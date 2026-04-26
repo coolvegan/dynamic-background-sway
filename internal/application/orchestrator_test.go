@@ -8,6 +8,7 @@ import (
 	"gittea.kittel.dev/marco/dynamic_background/internal/domain"
 	"gittea.kittel.dev/marco/dynamic_background/internal/infrastructure/collector"
 	"gittea.kittel.dev/marco/dynamic_background/internal/infrastructure/renderer"
+	"gittea.kittel.dev/marco/dynamic_background/internal/infrastructure/wayland"
 )
 
 func TestNewOrchestrator(t *testing.T) {
@@ -21,7 +22,8 @@ func TestNewOrchestrator(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	orch := NewOrchestrator(cfg, nil, nil)
+	s := wayland.NewMockSurface()
+	orch := NewOrchestrator(cfg, nil, nil, s)
 
 	if orch == nil {
 		t.Fatal("expected Orchestrator instance")
@@ -48,7 +50,8 @@ func TestOrchestrator_StartStop(t *testing.T) {
 	}
 
 	r := &renderer.MockRenderer{}
-	orch := NewOrchestrator(cfg, collectors, r)
+	s := wayland.NewMockSurface()
+	orch := NewOrchestrator(cfg, collectors, r, s)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -66,6 +69,11 @@ func TestOrchestrator_StartStop(t *testing.T) {
 	// Renderer should have been called
 	if !r.RenderCalled {
 		t.Error("expected renderer to be called")
+	}
+
+	// Surface should have committed (Connect is called from main, not orchestrator)
+	if s.CommitCalled == 0 {
+		t.Error("expected surface to be committed at least once")
 	}
 }
 
@@ -89,7 +97,8 @@ func TestOrchestrator_RenderLoop(t *testing.T) {
 	}
 
 	r := &renderer.MockRenderer{}
-	orch := NewOrchestrator(cfg, collectors, r)
+	s := wayland.NewMockSurface()
+	orch := NewOrchestrator(cfg, collectors, r, s)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -104,6 +113,11 @@ func TestOrchestrator_RenderLoop(t *testing.T) {
 	// Renderer should have been called multiple times
 	if !r.RenderCalled {
 		t.Error("expected renderer to be called at least once")
+	}
+
+	// Surface should have been committed multiple times
+	if s.CommitCalled == 0 {
+		t.Error("expected surface to be committed at least once")
 	}
 }
 

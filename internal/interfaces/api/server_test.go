@@ -203,3 +203,178 @@ func TestServer_AddWidget_InvalidType(t *testing.T) {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
 	}
 }
+
+func TestServer_UpdateConfig_Success(t *testing.T) {
+	srv, testSrv := setupTestServer(t)
+	defer testSrv.Close()
+
+	newCfg := map[string]interface{}{
+		"background": map[string]interface{}{
+			"type":   "gradient",
+			"colors": []string{"#000000", "#ffffff"},
+		},
+		"widgets": []interface{}{
+			map[string]interface{}{
+				"type": "clock",
+				"position": map[string]int{
+					"x": 50,
+					"y": 50,
+				},
+				"size": map[string]int{
+					"width":  300,
+					"height": 60,
+				},
+				"interval": "1s",
+			},
+		},
+		"api": map[string]interface{}{
+			"enabled":   true,
+			"port":      9090,
+			"websocket": true,
+		},
+	}
+
+	body, _ := json.Marshal(newCfg)
+
+	req, _ := http.NewRequest("PUT", testSrv.URL+"/api/v1/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var result map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if result["message"] != "config updated" {
+		t.Errorf("expected 'config updated', got %q", result["message"])
+	}
+
+	// Verify config was actually applied
+	if srv.cfg.API.Port != 9090 {
+		t.Errorf("expected API port 9090, got %d", srv.cfg.API.Port)
+	}
+
+	if len(srv.cfg.Widgets) != 1 {
+		t.Errorf("expected 1 widget, got %d", len(srv.cfg.Widgets))
+	}
+}
+
+func TestServer_UpdateConfig_InvalidBody(t *testing.T) {
+	_, testSrv := setupTestServer(t)
+	defer testSrv.Close()
+
+	req, _ := http.NewRequest("PUT", testSrv.URL+"/api/v1/config", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestServer_UpdateConfig_InvalidWidgets(t *testing.T) {
+	srv, testSrv := setupTestServer(t)
+	defer testSrv.Close()
+
+	originalPort := srv.cfg.API.Port
+
+	newCfg := map[string]interface{}{
+		"background": map[string]interface{}{
+			"type":   "gradient",
+			"colors": []string{"#000000", "#ffffff"},
+		},
+		"widgets": []interface{}{
+			map[string]interface{}{
+				"type": "invalid_widget_type",
+				"position": map[string]int{
+					"x": 0,
+					"y": 0,
+				},
+				"size": map[string]int{
+					"width":  100,
+					"height": 50,
+				},
+				"interval": "1s",
+			},
+		},
+		"api": map[string]interface{}{
+			"enabled": true,
+			"port":    8080,
+		},
+	}
+
+	body, _ := json.Marshal(newCfg)
+
+	req, _ := http.NewRequest("PUT", testSrv.URL+"/api/v1/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+
+	// Verify config was NOT changed
+	if srv.cfg.API.Port != originalPort {
+		t.Error("config should not have been modified on validation failure")
+	}
+}
+
+func TestServer_UpdateConfig_MissingBackground(t *testing.T) {
+	_, testSrv := setupTestServer(t)
+	defer testSrv.Close()
+
+	newCfg := map[string]interface{}{
+		"widgets": []interface{}{
+			map[string]interface{}{
+				"type": "clock",
+				"position": map[string]int{
+					"x": 0,
+					"y": 0,
+				},
+				"size": map[string]int{
+					"width":  100,
+					"height": 50,
+				},
+				"interval": "1s",
+			},
+		},
+	}
+
+	body, _ := json.Marshal(newCfg)
+
+	req, _ := http.NewRequest("PUT", testSrv.URL+"/api/v1/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}

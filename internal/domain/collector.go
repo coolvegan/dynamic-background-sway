@@ -1,3 +1,28 @@
+// Package domain defines the core business entities for dynamic_background.
+//
+// This file (collector.go) defines the Collector interface — the contract for
+// fetching system data (CPU, memory, disk, network, battery, clock, custom
+// scripts) that widgets display. It also provides CollectorData as the uniform
+// result type and testing helpers (MockCollector, CollectorFunc).
+//
+// Why it exists:
+//   The Collector interface decouples data sources from widgets. Without it,
+//   widgets would directly read /proc or /sys, making them untestable and
+//   tightly coupled to Linux-specific paths. The interface allows:
+//   - Mock collectors for unit tests
+//   - Function-based collectors (CollectorFunc) for simple cases
+//   - Swapping implementations without changing widget code
+//
+// How it connects:
+//   - Concrete collectors live in infrastructure/collector/ (CPUCollector, etc.)
+//   - main_cgo.go creates collectors and passes them to NewWidgetManager()
+//   - WidgetManager.UpdateWidget() calls collector.Collect(ctx) per widget
+//   - Result (CollectorData) is formatted into Widget.Value for rendering
+//   - Widget.Data holds the raw CollectorData for advanced renderers
+//
+// Key concept: Each widget type maps to exactly one collector via
+// map[WidgetType]Collector. The collector runs on the widget's configured
+// interval (set by the Scheduler).
 package domain
 
 import (

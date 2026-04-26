@@ -31,10 +31,6 @@ func NewRenderContext(bounds image.Rectangle) *RenderContext {
 }
 
 // SetDirtyWidgets sets the widgets that need re-rendering.
-//
-// WHY: Renderer muss wissen welche Widgets neu gezeichnet werden.
-// WHAT: Filtert dirty Widgets, berechnet deren Rects.
-// IMPACT: Ohne diese Methode wüsste Renderer nicht was zu zeichnen ist.
 func (rc *RenderContext) SetDirtyWidgets(widgets []*domain.Widget) {
 	rc.dirtyWidgets = nil
 	rc.dirtyRects = nil
@@ -51,6 +47,23 @@ func (rc *RenderContext) SetDirtyWidgets(widgets []*domain.Widget) {
 			)
 			rc.dirtyRects = append(rc.dirtyRects, rect)
 		}
+	}
+}
+
+// SetWidgets sets all widgets for rendering (regardless of dirty state).
+func (rc *RenderContext) SetWidgets(widgets []*domain.Widget) {
+	rc.dirtyWidgets = widgets
+	rc.dirtyRects = nil
+
+	for _, w := range widgets {
+		bounds := w.Bounds()
+		rect := image.Rect(
+			bounds.X,
+			bounds.Y,
+			bounds.X+bounds.Width,
+			bounds.Y+bounds.Height,
+		)
+		rc.dirtyRects = append(rc.dirtyRects, rect)
 	}
 }
 
@@ -74,5 +87,10 @@ func (rc *RenderContext) HasDirtyWidgets() bool {
 
 // DirtyWidgets returns the widgets that need re-rendering.
 func (rc *RenderContext) DirtyWidgets() []*domain.Widget {
+	return rc.dirtyWidgets
+}
+
+// Widgets returns all widgets in the render context.
+func (rc *RenderContext) Widgets() []*domain.Widget {
 	return rc.dirtyWidgets
 }

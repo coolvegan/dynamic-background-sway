@@ -1,0 +1,36 @@
+background:
+  type: gradient
+  colors: ["#000000", "#222222"]
+
+widgets:
+  - type: clock
+    position: { x: 20, y: 20 }
+    size: { width: 200, height: 50 }
+    interval: 1s
+    style:
+      font: "DejaVu Sans 16"
+      color: "#ffffff"
+      background: "rgba(0,0,0,0.0)"
+
+  - type: cpu
+    position: { x: 20, y: 80 }
+    size: { width: 200, height: 50 }
+    interval: 2s
+    style:
+      font: "DejaVu Sans 16"
+      color: "#ffffff"
+      background: "rgba(0,0,0,0.0)"
+
+  - type: memory
+    position: { x: 240, y: 80 }
+    size: { width: 200, height: 50 }
+    interval: 5s
+    style:
+      font: "DejaVu Sans 16"
+      color: "#ffffff"
+      background: "rgba(0,0,0,0.0)"
+
+api:
+  enabled: true
+  port: 8080
+  websocket: true

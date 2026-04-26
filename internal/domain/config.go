@@ -1,3 +1,25 @@
+// Package domain defines the core business entities for dynamic_background.
+//
+// This file (config.go) defines the Config domain entity — the root configuration
+// structure that describes the entire application state: which widgets to display,
+// how the background should look, and whether the API server is enabled.
+//
+// Why it exists:
+//   Config is the single source of truth for what the application should do.
+//   It is loaded from YAML at startup, can be hot-reloaded via the API, and
+//   is referenced by every layer (WidgetManager reads widgets, Renderer reads
+//   background config, API server reads port settings).
+//
+// How it connects:
+//   - Loaded by config.LoadConfig() from YAML into domain.Config
+//   - Passed to NewOrchestrator() which creates WidgetManager from cfg.Widgets
+//   - Background config passed to WaylandRenderer for drawBackground()
+//   - API config controls whether Server.Start() listens on a port
+//   - NewConfig() validates everything before the app starts
+//
+// Key concept: Config is mutable at runtime. The API can replace cfg.Widgets
+// and cfg.Background while the app is running. The orchestrator picks up
+// changes on the next render cycle.
 package domain
 
 import (
@@ -55,7 +77,7 @@ type Config struct {
 // IMPACT: Without validation, invalid configs could cause runtime panics or silent failures.
 func NewConfig(cfg Config) (*Config, error) {
 	if cfg.Widgets == nil {
-		return nil, errors.New("widgets must not be nil")
+		cfg.Widgets = []*Widget{}
 	}
 	if cfg.Background.Type == "" {
 		return nil, errors.New("background type must not be empty")

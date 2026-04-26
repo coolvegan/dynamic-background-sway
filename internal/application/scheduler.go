@@ -1,3 +1,29 @@
+// Package application contains the business logic that wires domain entities
+// with infrastructure implementations.
+//
+// This file (scheduler.go) defines the Scheduler — the component that triggers
+// periodic widget updates based on each widget's individual interval. It runs
+// one goroutine per widget, each with its own time.Ticker.
+//
+// Why it exists:
+//   Different widgets need different update frequencies. CPU usage changes
+//   every second, but disk usage barely changes. A single fixed interval for
+//   all widgets would either waste CPU (updating disk every second) or show
+//   stale data (updating CPU every 30 seconds). The Scheduler solves this by
+//   giving each widget its own timer.
+//
+// How it connects:
+//   - Created by Orchestrator with a reference to WidgetManager
+//   - Start() spawns one goroutine per widget, each running runWidgetTimer()
+//   - runWidgetTimer() does an initial update, then ticks at widget.Interval
+//   - Each tick calls WidgetManager.UpdateWidget() which fetches data and
+//     marks the widget dirty
+//   - Stop() cancels the context, which stops all goroutines via wg.Wait()
+//   - Orchestrator calls Stop() during shutdown (SIGINT/SIGTERM)
+//
+// Key concept: The Scheduler does NOT render anything. It only updates widget
+// data and sets the dirty flag. The render loop (in Orchestrator) is separate
+// and runs at a fixed 100ms interval regardless of collector intervals.
 package application
 
 import (

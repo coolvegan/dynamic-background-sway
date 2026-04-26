@@ -1,0 +1,28 @@
+background:
+  type: gradient
+  colors: ["#1a1a2e", "#16213e"]
+
+widgets:
+  - type: clock
+    position: { x: 20, y: 20 }
+    size: { width: 200, height: 50 }
+    interval: 1s
+    style:
+      font: "Monospace 12"
+      color: "#ffffff"
+      background: "rgba(0,0,0,0.5)"
+
+  - type: cpu
+    position: { x: 20, y: 80 }
+    size: { width: 200, height: 50 }
+    interval: 2s
+
+  - type: memory
+    position: { x: 240, y: 80 }
+    size: { width: 200, height: 50 }
+    interval: 5s
+
+api:
+  enabled: true
+  port: 8080
+  websocket: true

@@ -47,8 +47,11 @@ func TestConfig_Validation(t *testing.T) {
 			name: "nil widgets",
 			cfg: Config{
 				Widgets: nil,
+				Background: BackgroundConfig{
+					Type: BackgroundTypeSolid,
+				},
 			},
-			wantErr: "widgets must not be nil",
+			wantErr: "",
 		},
 		{
 			name: "empty background type",
@@ -114,6 +117,12 @@ func TestConfig_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := NewConfig(tt.cfg)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("expected no error, got %q", err.Error())
+				}
+				return
+			}
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}

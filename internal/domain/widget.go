@@ -1,3 +1,26 @@
+// Package domain defines the core business entities for dynamic_background.
+//
+// This file (widget.go) defines the Widget domain entity — the fundamental unit
+// of displayable content on the desktop background. A Widget encapsulates what
+// to show (Type, Value), where to show it (Position, Size), and how it looks
+// (Style).
+//
+// Why it exists:
+//   Widgets are the primary domain concept. Everything else in the system
+//   (collectors, scheduler, renderer, API) exists to manage, update, and
+//   display widgets. This file defines the data structures and validation
+//   rules that all other layers depend on.
+//
+// How it connects:
+//   - Config (config.go) holds a slice of Widgets as the user's layout definition
+//   - WidgetManager (application/widgetmanager.go) updates Widget.Value from Collectors
+//   - Scheduler (application/scheduler.go) triggers periodic updates per Widget
+//   - Renderer (infrastructure/renderer/draw.go) reads Widget.Position, Size, Style, Value
+//   - API (interfaces/api/server.go) creates Widgets from JSON via NewWidget()
+//
+// Key concept: The Dirty flag enables incremental rendering. When a collector
+// updates a widget's value, MarkDirty() is called. The render loop (100ms tick)
+// checks for dirty widgets, renders them, then calls MarkClean().
 package domain
 
 import (
@@ -111,6 +134,11 @@ func (w *Widget) MarkClean() {
 // MarkDirty sets the dirty flag to trigger a re-render on the next cycle.
 func (w *Widget) MarkDirty() {
 	w.Dirty = true
+}
+
+// IsDirty returns true if the widget needs to be re-rendered.
+func (w *Widget) IsDirty() bool {
+	return w.Dirty
 }
 
 // Bounds returns the rectangular area this widget occupies.

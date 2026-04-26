@@ -1,6 +1,48 @@
+// Package api provides the HTTP and WebSocket interface for external control
+// and monitoring of the dynamic_background application.
+//
+// This file (server.go) defines the Server — a REST API + WebSocket server
+// that allows external tools to read/modify configuration, manage widgets,
+// and receive real-time updates without restarting the process.
+//
+// Why it exists:
+//   Without the API server, users would need to edit the YAML config file and
+//   restart the process to change widgets or background settings. The API
+//   enables:
+//   - Hot-reload: change widgets/background without restarting
+//   - Monitoring: check health, system info, current widget state
+//   - Integration: other tools can programmatically control the background
+//   - Live updates: WebSocket pushes changes to connected clients
+//
+// How it connects:
+//   - Created in main_cgo.go if cfg.API.Enabled is true
+//   - Receives references to Config, WidgetManager, Scheduler, Orchestrator
+//   - Routes are registered in registerRoutes() using gorilla/mux
+//   - handleUpdateConfig() validates incoming JSON, creates new domain.Widgets
+//     via NewWidget(), updates shared cfg, and triggers re-render via
+//     orchestrator.UpdateBackgroundConfig()
+//   - Broadcast() sends JSON messages to all connected WebSocket clients
+//   - WebSocket clients receive "config_change" events when config is updated
+//
+// API Endpoints (all under /api/v1/):
+//   GET  /health          - Health check {"status": "ok"}
+//   GET  /config          - Current configuration
+//   PUT  /config          - Hot-reload configuration
+//   GET  /widgets         - List all widgets
+//   POST /widgets         - Add a new widget
+//   PUT  /widgets/{id}    - Update widget (TODO)
+//   DELETE /widgets/{id}  - Remove widget (TODO)
+//   GET  /system          - System info (uptime, widget count)
+//   GET  /ws              - WebSocket upgrade for live updates
+//
+// Key concept: The API server shares the same *domain.Config pointer as the
+// rest of the application. When handleUpdateConfig() replaces cfg.Widgets,
+// the WidgetManager and Scheduler immediately see the new widgets. A mutex
+// protects concurrent access to the config.
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -102,14 +144,92 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUpdateConfig updates the configuration.
+//
+// WHY: Hot-Reload der Config ohne Neustart; User kann Widgets/Background/API ändern.
+// WHAT: Parst JSON mit String-Intervallen, konvertiert zu Domain-Typen, validiert, applied, broadcastet.
+// IMPACT: Ohne Validierung könnten invalide Configs das System brechen; ohne Broadcast wissen Clients nicht von Änderungen.
 func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
-	var newCfg domain.Config
-	if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+	var req struct {
+		Background domain.BackgroundConfig `json:"background"`
+		Widgets    []struct {
+			Type     string            `json:"type"`
+			Position domain.Position   `json:"position"`
+			Size     domain.Size       `json:"size"`
+			Style    domain.Style      `json:"style"`
+			Interval string            `json:"interval"`
+		} `json:"widgets"`
+		API domain.APIConfig `json:"api"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// TODO: Validate and apply new config
+	var widgets []*domain.Widget
+	for _, wReq := range req.Widgets {
+		interval, err := time.ParseDuration(wReq.Interval)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "invalid interval: " + err.Error(),
+			})
+			return
+		}
+
+		widget, err := domain.NewWidget(
+			domain.WidgetType(wReq.Type),
+			wReq.Position,
+			wReq.Size,
+			wReq.Style,
+			interval,
+		)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		widgets = append(widgets, widget)
+	}
+
+	newCfg, err := domain.NewConfig(domain.Config{
+		Widgets:    widgets,
+		Background: req.Background,
+		API:        req.API,
+	})
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	s.mu.Lock()
+	s.cfg.Widgets = newCfg.Widgets
+	s.cfg.Background = newCfg.Background
+	s.cfg.API = newCfg.API
+	s.mu.Unlock()
+
+	// Update renderer and trigger immediate re-render
+	if s.orchestrator != nil {
+		s.orchestrator.UpdateBackgroundConfig(newCfg.Background, context.Background())
+	}
+
+	s.Broadcast(map[string]interface{}{
+		"type": "config_change",
+		"data": map[string]interface{}{
+			"widgets":   len(newCfg.Widgets),
+			"timestamp": time.Now().Format(time.RFC3339),
+		},
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{

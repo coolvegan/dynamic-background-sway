@@ -14,6 +14,27 @@ import (
 	"gittea.kittel.dev/marco/dynamic_background/internal/domain"
 )
 
+// detectDefaultInterface finds the first non-loopback interface from /proc/net/dev.
+func detectDefaultInterface() string {
+	f, err := os.Open("/proc/net/dev")
+	if err != nil {
+		return "eth0"
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "lo:") {
+			continue
+		}
+		if idx := strings.Index(line, ":"); idx > 0 {
+			return strings.TrimSpace(line[:idx])
+		}
+	}
+	return "eth0"
+}
+
 // NetDevStats holds network statistics for a single interface.
 //
 // WHY: Linux trackt Netzwerk-Traffic in /proc/net/dev.
@@ -48,11 +69,15 @@ type NetworkCollector struct {
 }
 
 // NewNetworkCollector creates a network collector for a specific interface.
+// If iface is empty, auto-detects the first non-loopback interface.
 //
 // WHY: Factory für Normalfall (eth0 oder erstes verfügbares Interface).
 // WHAT: Verwendet /proc/net/dev als Datenquelle.
 // IMPACT: Ohne Factory müsste Caller /proc/net/dev manuell öffnen.
 func NewNetworkCollector(iface string) *NetworkCollector {
+	if iface == "" {
+		iface = detectDefaultInterface()
+	}
 	return &NetworkCollector{
 		iface: iface,
 		opener: func() (io.Reader, error) {
