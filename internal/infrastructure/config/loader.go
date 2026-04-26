@@ -19,6 +19,7 @@ import (
 type yamlConfig struct {
 	Background yamlBackground `yaml:"background"`
 	Widgets    []yamlWidget   `yaml:"widgets"`
+	Renderer   yamlRenderer   `yaml:"renderer"`
 	API        yamlAPI        `yaml:"api"`
 }
 
@@ -26,6 +27,10 @@ type yamlBackground struct {
 	Type      string   `yaml:"type"`
 	Colors    []string `yaml:"colors"`
 	ImagePath string   `yaml:"image_path"`
+}
+
+type yamlRenderer struct {
+	Type string `yaml:"type"`
 }
 
 type yamlWidget struct {
@@ -123,6 +128,9 @@ func toDomainConfig(yamlCfg *yamlConfig) (*domain.Config, error) {
 			Type:      domain.BackgroundType(yamlCfg.Background.Type),
 			Colors:    yamlCfg.Background.Colors,
 			ImagePath: yamlCfg.Background.ImagePath,
+		},
+		Renderer: domain.RendererConfig{
+			Type: domain.RendererType(yamlCfg.Renderer.Type),
 		},
 		API: domain.APIConfig{
 			Enabled:   yamlCfg.API.Enabled,
