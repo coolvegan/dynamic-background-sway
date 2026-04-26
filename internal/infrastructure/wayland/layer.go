@@ -272,6 +272,13 @@ int c_layer_commit_all(void) {
 void* c_layer_wl_display(void) { return (void*)display; }
 void* c_layer_wl_surface(int idx) { return (idx >= 0 && idx < monitor_count) ? (void*)monitors[idx].surface : NULL; }
 
+void c_layer_commit_surface(int idx) {
+    if (idx >= 0 && idx < monitor_count) {
+        wl_surface_commit(monitors[idx].surface);
+        wl_display_flush(display);
+    }
+}
+
 void c_layer_cleanup(void) {
     for (int i = 0; i < monitor_count; i++) {
         MonitorSurface *m = &monitors[i];

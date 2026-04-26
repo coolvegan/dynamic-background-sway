@@ -11,6 +11,8 @@ package renderer
 #include <stdio.h>
 #include <stdlib.h>
 
+void c_layer_commit_surface(int idx);
+
 static EGLDisplay g_egl_display = EGL_NO_DISPLAY;
 static EGLContext g_egl_context = EGL_NO_CONTEXT;
 static EGLSurface g_egl_surface = EGL_NO_SURFACE;
@@ -18,7 +20,6 @@ static struct wl_egl_window *g_egl_window = NULL;
 static GLuint g_shader_program = 0;
 static GLuint g_texture_shader = 0;
 static GLuint g_texture_id = 0;
-static unsigned char *g_pixel_buffer = NULL;
 static int g_width = 0;
 static int g_height = 0;
 
@@ -133,30 +134,23 @@ int egl_init(void* wl_display_ptr, void* wl_surface_ptr, int width, int height) 
         return -7;
     }
 
-    // Color shader
     GLuint vs1 = compile_shader(GL_VERTEX_SHADER, g_vs_color);
     GLuint fs1 = compile_shader(GL_FRAGMENT_SHADER, g_fs_color);
     if (!vs1 || !fs1) return -8;
     g_shader_program = link_program(vs1, fs1);
     if (!g_shader_program) return -8;
 
-    // Texture shader
     GLuint vs2 = compile_shader(GL_VERTEX_SHADER, g_vs_tex);
     GLuint fs2 = compile_shader(GL_FRAGMENT_SHADER, g_fs_tex);
     if (!vs2 || !fs2) return -9;
     g_texture_shader = link_program(vs2, fs2);
     if (!g_texture_shader) return -9;
 
-    // Create texture
     glGenTextures(1, &g_texture_id);
     glBindTexture(GL_TEXTURE_2D, g_texture_id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    // Pixel buffer for software rendering
-    g_pixel_buffer = (unsigned char*)malloc(width * height * 4);
-    if (!g_pixel_buffer) return -10;
 
     glViewport(0, 0, width, height);
     glClearColor(0, 0, 0, 1);
@@ -166,14 +160,16 @@ int egl_init(void* wl_display_ptr, void* wl_surface_ptr, int width, int height) 
 }
 
 int egl_render_frame(unsigned char* pixels) {
-    // Upload pixels to texture
     glBindTexture(GL_TEXTURE_2D, g_texture_id);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, g_width, g_height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_width, g_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
-    // Clear
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR) {
+        fprintf(stderr, "egl: gl error after tex upload: 0x%x\n", err);
+    }
+
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Draw fullscreen quad with texture
     glUseProgram(g_texture_shader);
     GLint loc = glGetUniformLocation(g_texture_shader, "u_tex");
     glUniform1i(loc, 0);
@@ -191,15 +187,18 @@ int egl_render_frame(unsigned char* pixels) {
     glVertexAttribPointer(pos, 2, GL_FLOAT, GL_FALSE, 0, verts);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
+    err = glGetError();
+    if (err != GL_NO_ERROR) {
+        fprintf(stderr, "egl: gl error after draw: 0x%x\n", err);
+    }
+
+    fprintf(stderr, "egl: swapbuffers\n");
     eglSwapBuffers(g_egl_display, g_egl_surface);
+    c_layer_commit_surface(0);
     return 0;
 }
 
 void egl_cleanup(void) {
-    if (g_pixel_buffer) {
-        free(g_pixel_buffer);
-        g_pixel_buffer = NULL;
-    }
     if (g_texture_id) {
         glDeleteTextures(1, &g_texture_id);
         g_texture_id = 0;
@@ -236,6 +235,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os"
 	"unsafe"
 
 	"gittea.kittel.dev/marco/dynamic_background/internal/domain"
@@ -270,6 +270,7 @@ func NewEGLRenderer(s wayland.Surface, config domain.BackgroundConfig) *EGLRende
 }
 
 func (r *EGLRenderer) Init() error {
+	fmt.Fprintf(os.Stderr, "egl: Init() called, eglSurface=%v, initialized=%v\n", r.eglSurface != nil, r.initialized)
 	if r.eglSurface == nil {
 		return fmt.Errorf("EGLRenderer.Init: surface does not implement EGLSurfaceProvider")
 	}
@@ -279,15 +280,19 @@ func (r *EGLRenderer) Init() error {
 
 	displayPtr := r.eglSurface.WlDisplayPtr()
 	surfacePtr := r.eglSurface.WlSurfacePtr(0)
+	fmt.Fprintf(os.Stderr, "egl: pointers display=%v surface=%v size=%dx%d\n", displayPtr, surfacePtr, r.width, r.height)
 	if displayPtr == nil || surfacePtr == nil {
-		return fmt.Errorf("EGLRenderer.Init: null Wayland pointers")
+		return fmt.Errorf("EGLRenderer.Init: null Wayland pointers (display=%v, surface=%v)", displayPtr, surfacePtr)
 	}
 
+	fmt.Fprintf(os.Stderr, "egl: calling C.egl_init with %dx%d\n", r.width, r.height)
 	ret := C.egl_init(displayPtr, surfacePtr, C.int(r.width), C.int(r.height))
+	fmt.Fprintf(os.Stderr, "egl: C.egl_init returned %d\n", ret)
 	if ret != 0 {
 		return fmt.Errorf("egl init failed: %d", ret)
 	}
 	r.initialized = true
+	fmt.Fprintf(os.Stderr, "egl: initialization complete\n")
 	return nil
 }
 

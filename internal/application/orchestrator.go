@@ -125,7 +125,8 @@ func (o *Orchestrator) UpdateBackgroundConfig(cfg domain.BackgroundConfig, ctx c
 // renderLoop periodically checks for dirty widgets and renders them.
 //
 // WHY: Renderer muss regelmäßig prüfen ob es was zu zeichnen gibt.
-//      Nur rendern wenn Widgets dirty sind → CPU sparen.
+//
+//	Nur rendern wenn Widgets dirty sind → CPU sparen.
 //
 // WHAT: Sleep → Dirty check → Nur rendern wenn nötig → Commit → Repeat.
 // IMPACT: Ohne Render-Loop würden Widgets updated aber nie angezeigt.
@@ -138,7 +139,6 @@ func (o *Orchestrator) renderLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Only render if at least one widget is dirty
 			widgets := o.widgetManager.GetAllWidgets()
 			hasDirty := false
 			for _, w := range widgets {
