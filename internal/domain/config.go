@@ -46,6 +46,33 @@ func (bt BackgroundType) IsValid() bool {
 	return false
 }
 
+// RendererType defines the rendering backend.
+type RendererType string
+
+const (
+	RendererTypeWayland RendererType = "wayland"
+	RendererTypeEGL     RendererType = "egl"
+)
+
+// IsValid checks if the renderer type is supported.
+func (rt RendererType) IsValid() bool {
+	switch rt {
+	case RendererTypeWayland, RendererTypeEGL:
+		return true
+	}
+	return false
+}
+
+// RendererConfig holds settings for the rendering backend.
+type RendererConfig struct {
+	Type RendererType
+}
+
+// DefaultRendererConfig returns the default renderer config (wayland/shm).
+func DefaultRendererConfig() RendererConfig {
+	return RendererConfig{Type: RendererTypeWayland}
+}
+
 // BackgroundConfig holds settings for the background rendering.
 type BackgroundConfig struct {
 	Type      BackgroundType
@@ -68,6 +95,7 @@ type APIConfig struct {
 type Config struct {
 	Widgets    []*Widget
 	Background BackgroundConfig
+	Renderer   RendererConfig
 	API        APIConfig
 }
 
@@ -88,6 +116,12 @@ func NewConfig(cfg Config) (*Config, error) {
 	if cfg.Background.Type == BackgroundTypeGradient && len(cfg.Background.Colors) < 2 {
 		return nil, errors.New("gradient background requires at least 2 colors")
 	}
+	if cfg.Renderer.Type == "" {
+		cfg.Renderer = DefaultRendererConfig()
+	}
+	if !cfg.Renderer.Type.IsValid() {
+		return nil, fmt.Errorf("invalid renderer type: %s", cfg.Renderer.Type)
+	}
 	if cfg.API.Enabled {
 		if cfg.API.Port < 1 || cfg.API.Port > 65535 {
 			return nil, errors.New("API port must be between 1 and 65535")
@@ -97,6 +131,7 @@ func NewConfig(cfg Config) (*Config, error) {
 	return &Config{
 		Widgets:    cfg.Widgets,
 		Background: cfg.Background,
+		Renderer:   cfg.Renderer,
 		API:        cfg.API,
 	}, nil
 }
