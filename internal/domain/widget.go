@@ -68,6 +68,12 @@ type Widget struct {
 	Interval time.Duration
 	Dirty    bool
 
+	// Value holds the current display string from the collector.
+	Value string
+
+	// Data holds the raw collector data for advanced rendering.
+	Data *CollectorData
+
 	// CustomCommand is used when Type is WidgetTypeCustom.
 	CustomCommand string
 }
