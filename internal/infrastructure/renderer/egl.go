@@ -16,16 +16,35 @@ static EGLContext g_egl_context = EGL_NO_CONTEXT;
 static EGLSurface g_egl_surface = EGL_NO_SURFACE;
 static struct wl_egl_window *g_egl_window = NULL;
 static GLuint g_shader_program = 0;
-static GLint g_uniform_color = -1;
+static GLuint g_texture_shader = 0;
+static GLuint g_texture_id = 0;
+static unsigned char *g_pixel_buffer = NULL;
+static int g_width = 0;
+static int g_height = 0;
 
-static const char* g_vs_source =
+static const char* g_vs_color =
     "attribute vec2 a_pos;\n"
     "void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
 
-static const char* g_fs_source =
+static const char* g_fs_color =
     "precision mediump float;\n"
     "uniform vec4 u_color;\n"
     "void main() { gl_FragColor = u_color; }\n";
+
+static const char* g_vs_tex =
+    "attribute vec2 a_pos;\n"
+    "varying vec2 v_uv;\n"
+    "void main() {\n"
+    "    v_uv = a_pos * 0.5 + 0.5;\n"
+    "    v_uv.y = 1.0 - v_uv.y;\n"
+    "    gl_Position = vec4(a_pos, 0.0, 1.0);\n"
+    "}\n";
+
+static const char* g_fs_tex =
+    "precision mediump float;\n"
+    "varying vec2 v_uv;\n"
+    "uniform sampler2D u_tex;\n"
+    "void main() { gl_FragColor = texture2D(u_tex, v_uv); }\n";
 
 static GLuint compile_shader(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
@@ -42,23 +61,41 @@ static GLuint compile_shader(GLenum type, const char* src) {
     return s;
 }
 
+static GLuint link_program(GLuint vs, GLuint fs) {
+    GLuint p = glCreateProgram();
+    glAttachShader(p, vs);
+    glAttachShader(p, fs);
+    glLinkProgram(p);
+    GLint ok;
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[256];
+        glGetProgramInfoLog(p, sizeof(log), NULL, log);
+        fprintf(stderr, "shader link error: %s\n", log);
+        return 0;
+    }
+    return p;
+}
+
 int egl_init(void* wl_display_ptr, void* wl_surface_ptr, int width, int height) {
     struct wl_display* wl_display = (struct wl_display*)wl_display_ptr;
     struct wl_surface* wl_surface = (struct wl_surface*)wl_surface_ptr;
-    
+    g_width = width;
+    g_height = height;
+
     g_egl_display = eglGetDisplay((EGLNativeDisplayType)wl_display);
     if (g_egl_display == EGL_NO_DISPLAY) {
         fprintf(stderr, "egl: no display\n");
         return -1;
     }
-    
+
     EGLint major, minor;
     if (!eglInitialize(g_egl_display, &major, &minor)) {
         fprintf(stderr, "egl: init failed\n");
         return -2;
     }
     fprintf(stderr, "egl: initialized %d.%d\n", major, minor);
-    
+
     EGLint attrs[] = {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
@@ -71,66 +108,110 @@ int egl_init(void* wl_display_ptr, void* wl_surface_ptr, int width, int height) 
         fprintf(stderr, "egl: choose config failed\n");
         return -3;
     }
-    
+
     EGLint ctx_attrs[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
     g_egl_context = eglCreateContext(g_egl_display, config, EGL_NO_CONTEXT, ctx_attrs);
     if (g_egl_context == EGL_NO_CONTEXT) {
         fprintf(stderr, "egl: create context failed\n");
         return -4;
     }
-    
+
     g_egl_window = wl_egl_window_create(wl_surface, width, height);
     if (!g_egl_window) {
         fprintf(stderr, "egl: create window failed\n");
         return -5;
     }
-    
+
     g_egl_surface = eglCreateWindowSurface(g_egl_display, config, (EGLNativeWindowType)g_egl_window, NULL);
     if (g_egl_surface == EGL_NO_SURFACE) {
         fprintf(stderr, "egl: create surface failed\n");
         return -6;
     }
-    
+
     if (!eglMakeCurrent(g_egl_display, g_egl_surface, g_egl_surface, g_egl_context)) {
         fprintf(stderr, "egl: make current failed\n");
         return -7;
     }
-    
-    GLuint vs = compile_shader(GL_VERTEX_SHADER, g_vs_source);
-    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, g_fs_source);
-    if (!vs || !fs) return -8;
-    
-    g_shader_program = glCreateProgram();
-    glAttachShader(g_shader_program, vs);
-    glAttachShader(g_shader_program, fs);
-    glLinkProgram(g_shader_program);
-    
-    GLint link_ok;
-    glGetProgramiv(g_shader_program, GL_LINK_STATUS, &link_ok);
-    if (!link_ok) {
-        char log[256];
-        glGetProgramInfoLog(g_shader_program, sizeof(log), NULL, log);
-        fprintf(stderr, "shader link error: %s\n", log);
-        return -9;
-    }
-    
-    glUseProgram(g_shader_program);
-    g_uniform_color = glGetUniformLocation(g_shader_program, "u_color");
+
+    // Color shader
+    GLuint vs1 = compile_shader(GL_VERTEX_SHADER, g_vs_color);
+    GLuint fs1 = compile_shader(GL_FRAGMENT_SHADER, g_fs_color);
+    if (!vs1 || !fs1) return -8;
+    g_shader_program = link_program(vs1, fs1);
+    if (!g_shader_program) return -8;
+
+    // Texture shader
+    GLuint vs2 = compile_shader(GL_VERTEX_SHADER, g_vs_tex);
+    GLuint fs2 = compile_shader(GL_FRAGMENT_SHADER, g_fs_tex);
+    if (!vs2 || !fs2) return -9;
+    g_texture_shader = link_program(vs2, fs2);
+    if (!g_texture_shader) return -9;
+
+    // Create texture
+    glGenTextures(1, &g_texture_id);
+    glBindTexture(GL_TEXTURE_2D, g_texture_id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    // Pixel buffer for software rendering
+    g_pixel_buffer = (unsigned char*)malloc(width * height * 4);
+    if (!g_pixel_buffer) return -10;
+
     glViewport(0, 0, width, height);
     glClearColor(0, 0, 0, 1);
-    
+
     fprintf(stderr, "egl: ready %dx%d\n", width, height);
     return 0;
 }
 
-int egl_render_background(float r, float g, float b) {
-    glClearColor(r, g, b, 1.0);
+int egl_render_frame(unsigned char* pixels) {
+    // Upload pixels to texture
+    glBindTexture(GL_TEXTURE_2D, g_texture_id);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, g_width, g_height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+
+    // Clear
     glClear(GL_COLOR_BUFFER_BIT);
+
+    // Draw fullscreen quad with texture
+    glUseProgram(g_texture_shader);
+    GLint loc = glGetUniformLocation(g_texture_shader, "u_tex");
+    glUniform1i(loc, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_texture_id);
+
+    GLfloat verts[] = {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+        -1.0f,  1.0f,
+         1.0f,  1.0f,
+    };
+    GLint pos = glGetAttribLocation(g_texture_shader, "a_pos");
+    glEnableVertexAttribArray(pos);
+    glVertexAttribPointer(pos, 2, GL_FLOAT, GL_FALSE, 0, verts);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
     eglSwapBuffers(g_egl_display, g_egl_surface);
     return 0;
 }
 
 void egl_cleanup(void) {
+    if (g_pixel_buffer) {
+        free(g_pixel_buffer);
+        g_pixel_buffer = NULL;
+    }
+    if (g_texture_id) {
+        glDeleteTextures(1, &g_texture_id);
+        g_texture_id = 0;
+    }
+    if (g_shader_program) {
+        glDeleteProgram(g_shader_program);
+        g_shader_program = 0;
+    }
+    if (g_texture_shader) {
+        glDeleteProgram(g_texture_shader);
+        g_texture_shader = 0;
+    }
     if (g_egl_surface != EGL_NO_SURFACE) {
         eglDestroySurface(g_egl_display, g_egl_surface);
         g_egl_surface = EGL_NO_SURFACE;
@@ -153,16 +234,20 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"image"
+	"image/color"
+	"unsafe"
 
 	"gittea.kittel.dev/marco/dynamic_background/internal/domain"
 	"gittea.kittel.dev/marco/dynamic_background/internal/infrastructure/wayland"
 )
 
 type EGLRenderer struct {
-	eglSurface wayland.EGLSurfaceProvider
-	config     domain.BackgroundConfig
-	width      int
-	height     int
+	eglSurface  wayland.EGLSurfaceProvider
+	config      domain.BackgroundConfig
+	widgets     []*domain.Widget
+	width       int
+	height      int
 	initialized bool
 }
 
@@ -213,15 +298,19 @@ func (r *EGLRenderer) Render(ctx context.Context, rc *RenderContext) error {
 		}
 	}
 
-	color := [3]float32{0, 0, 0}
-	if r.config.Type == domain.BackgroundTypeSolid && len(r.config.Colors) > 0 {
-		c, err := parseHexColor(r.config.Colors[0])
-		if err == nil {
-			color = [3]float32{float32(c.R) / 255.0, float32(c.G) / 255.0, float32(c.B) / 255.0}
-		}
+	img := image.NewRGBA(image.Rect(0, 0, r.width, r.height))
+
+	if err := drawBackground(img, r.config); err != nil {
+		return fmt.Errorf("drawing background: %w", err)
 	}
 
-	ret := C.egl_render_background(C.float(color[0]), C.float(color[1]), C.float(color[2]))
+	widgets := rc.Widgets()
+	for _, w := range widgets {
+		drawWidget(img, w)
+	}
+
+	pixels := img.Pix
+	ret := C.egl_render_frame((*C.uchar)(unsafe.Pointer(&pixels[0])))
 	if ret != 0 {
 		return fmt.Errorf("egl render failed: %d", ret)
 	}
@@ -232,7 +321,10 @@ func (r *EGLRenderer) Clear() error {
 	if !r.initialized {
 		return nil
 	}
-	ret := C.egl_render_background(0, 0, 0)
+	img := image.NewRGBA(image.Rect(0, 0, r.width, r.height))
+	drawSolidBackground(img, color.RGBA{0, 0, 0, 255})
+	pixels := img.Pix
+	ret := C.egl_render_frame((*C.uchar)(unsafe.Pointer(&pixels[0])))
 	if ret != 0 {
 		return fmt.Errorf("egl clear failed: %d", ret)
 	}
