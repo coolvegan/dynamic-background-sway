@@ -4,6 +4,10 @@ background:
   type: image
   image_path: "/usr/share/backgrounds/wallpaper1.jpg"
 
+renderer:
+  # type: wayland  # or "egl" for hardware-accelerated OpenGL ES
+  type: wayland
+
 widgets:
   - type: clock
     position: { x: 20, y: 20 }
