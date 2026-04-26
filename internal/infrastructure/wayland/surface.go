@@ -5,6 +5,7 @@ import (
 	"errors"
 	"image"
 	"sync"
+	"unsafe"
 )
 
 // SurfaceState tracks the lifecycle of a Wayland surface.
@@ -59,6 +60,13 @@ type Surface interface {
 
 	// SetFrameCallback registers a callback invoked after each frame.
 	SetFrameCallback(fn func())
+}
+
+// EGLSurfaceProvider exposes raw Wayland pointers for EGL integration.
+// Implemented by LayerSurface; not by MockSurface.
+type EGLSurfaceProvider interface {
+	WlDisplayPtr() unsafe.Pointer
+	WlSurfacePtr(idx int) unsafe.Pointer
 }
 
 // Config holds settings for Wayland surface creation.

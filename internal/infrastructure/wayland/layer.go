@@ -269,6 +269,9 @@ int c_layer_commit_all(void) {
     return running ? 0 : -1;
 }
 
+void* c_layer_wl_display(void) { return (void*)display; }
+void* c_layer_wl_surface(int idx) { return (idx >= 0 && idx < monitor_count) ? (void*)monitors[idx].surface : NULL; }
+
 void c_layer_cleanup(void) {
     for (int i = 0; i < monitor_count; i++) {
         MonitorSurface *m = &monitors[i];
@@ -433,5 +436,15 @@ func (s *LayerSurface) State() SurfaceState {
 }
 
 func (s *LayerSurface) SetFrameCallback(fn func()) {}
+
+// WlDisplayPtr returns the raw wl_display pointer for EGL integration.
+func (s *LayerSurface) WlDisplayPtr() unsafe.Pointer {
+	return unsafe.Pointer(C.c_layer_wl_display())
+}
+
+// WlSurfacePtr returns the raw wl_surface pointer for the given monitor index.
+func (s *LayerSurface) WlSurfacePtr(idx int) unsafe.Pointer {
+	return unsafe.Pointer(C.c_layer_wl_surface(C.int(idx)))
+}
 
 var _ Surface = (*LayerSurface)(nil)

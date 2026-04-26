@@ -95,6 +95,9 @@ func (r *WaylandRenderer) Clear() error {
 	return nil
 }
 
+// Compile-time check: WaylandRenderer implements Renderer
+var _ Renderer = (*WaylandRenderer)(nil)
+
 // blitToSHM draws directly into the SHM buffer in XRGB8888 format.
 // No intermediate RGBA buffer, no copy.
 func (r *WaylandRenderer) blitToSHM(src *image.RGBA) {

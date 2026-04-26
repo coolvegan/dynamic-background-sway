@@ -52,7 +52,10 @@ func run() error {
 		return fmt.Errorf("creating surface: %w", err)
 	}
 
-	r := renderer.NewWaylandRenderer(s, cfg.Background)
+	r := renderer.NewEGLRenderer(s, cfg.Background)
+	if err := r.Init(); err != nil {
+		return fmt.Errorf("initializing EGL renderer: %w", err)
+	}
 	orch := application.NewOrchestrator(cfg, collectors, r, s)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,6 +82,7 @@ func run() error {
 	<-sig
 
 	fmt.Println("\nshutting down...")
+	r.Cleanup()
 	orch.Stop()
 	return nil
 }

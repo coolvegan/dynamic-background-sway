@@ -165,8 +165,11 @@ func (o *Orchestrator) renderFrame(ctx context.Context) {
 		return
 	}
 
-	if err := o.surface.Commit(); err != nil {
-		return
+	// Skip Commit() for renderers that present their own frames (e.g. EGL)
+	if _, ok := o.renderer.(interface{ PresentsOwnFrames() bool }); !ok {
+		if err := o.surface.Commit(); err != nil {
+			return
+		}
 	}
 
 	if o.renderHook != nil {
